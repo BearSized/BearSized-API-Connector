@@ -1,34 +1,43 @@
+// gmail.js
 const { google } = require('googleapis');
+const axios = require('axios');
 
-// Use google.auth.OAuth2 in Node.js
-const { OAuth2 } = google.auth;
-
-const oauth2Client = new OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
-
-// If we have a refresh token in env, set it immediately
-if (process.env.GOOGLE_REFRESH_TOKEN) {
-  oauth2Client.setCredentials({
+async function getAccessToken() {
+  const { data } = await axios.post('https://oauth2.googleapis.com/token', {
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    client_secret: process.env.GOOGLE_CLIENT_SECRET,
     refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    grant_type: 'refresh_token'
   });
+  return data.access_token;
 }
 
-// Helper to initialize and return Gmail service
-async function helloGmail() {
-  return google.gmail({ version: 'v1', auth: oauth2Client });
-}
+async function listMessages() {
+  const accessToken = await getAccessToken();
+  const gmail = google.gmail({ version: 'v1', auth: accessToken });
 
-// List the latest 10 inbox messages
-async function listEmails() {
-  const gmail = await helloGmail();
-  const res = await gmail.users.messages.list({
-    userId: 'me',
-    maxResults: 10,
-  });
+  const res = await gmail.users.messages.list({ userId: 'me', maxResults: 10 });
   return res.data.messages || [];
 }
 
-module.exports = { helloGmail, listEmails };
+async function sendMessage(to, subject, body) {
+  const accessToken = await getAccessToken();
+  const gmail = google.gmail({ version: 'v1', auth: accessToken });
+
+  const encodedMessage = Buffer.from(
+    `To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`
+  )
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  const res = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw: encodedMessage }
+  });
+
+  return res.data;
+}
+
+module.exports = { listMessages, sendMessage };
